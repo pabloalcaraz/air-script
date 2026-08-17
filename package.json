@@ -1,0 +1,10 @@
+{
+  "name": "air-script-tests",
+  "private": true,
+  "description": "Solo para lanzar los tests de puerto. El sketch se compila con arduino-cli.",
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "test": "node tools/run-tests.cjs",
+    "gzip": "node tools/gzip-web.cjs"
+  }
+}

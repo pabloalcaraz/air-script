@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run tests
+        run: node tools/run-tests.cjs
+
+      - name: Verify generated dashboard
+        run: node tools/gzip-web.cjs --check
+
+      - name: Set up Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+        with:
+          version: "1.5.1"
+
+      - name: Compile firmware
+        run: |
+          mkdir -p "$RUNNER_TEMP/air-script"
+          cp -a "$GITHUB_WORKSPACE/." "$RUNNER_TEMP/air-script/"
+          arduino-cli compile --profile esp32 --warnings all "$RUNNER_TEMP/air-script"

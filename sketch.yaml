@@ -1,0 +1,25 @@
+# Perfil de compilacion reproducible (arduino-cli >= 0.35).
+#   arduino-cli compile --profile esp32
+#   arduino-cli upload  --profile esp32 -p <PUERTO>
+#
+# PartitionScheme=huge_app es OBLIGATORIO: con el esquema por defecto el
+# binario con WiFi ocupa el 84% de 1.3 MB y no cabe el servidor web.
+# Aqui no usamos OTA ni SPIFFS (la web va embebida en PROGMEM), asi que
+# regalar esas particiones a la aplicacion no cuesta nada.
+profiles:
+  esp32:
+    notes: ESP32-D DevKit V1 (WROOM-32)
+    fqbn: esp32:esp32:esp32:PartitionScheme=huge_app
+    platforms:
+      - platform: esp32:esp32 (3.3.11)
+        platform_index_url: https://espressif.github.io/arduino-esp32/package_esp32_index.json
+    libraries:
+      - Adafruit GFX Library (1.12.6)
+      - Adafruit SSD1306 (2.5.17)
+      - Adafruit BusIO (1.17.4)
+      - PMS Library (1.1.0)
+      - Sensirion Core (0.7.3)
+      - Sensirion I2C SCD4x (1.1.0)
+      - WiFiManager (2.0.17)
+
+default_profile: esp32

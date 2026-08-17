@@ -1,0 +1,22 @@
+* text=auto
+
+# Fuentes y configuracion: un unico formato para builds reproducibles.
+*.ino  text eol=lf
+*.cpp  text eol=lf
+*.h    text eol=lf
+*.cjs  text eol=lf
+*.js   text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.md   text eol=lf
+*.py   text eol=lf
+
+# Artefactos binarios.
+*.bin  binary
+*.gz   binary
+*.ico  binary
+*.jpg  binary
+*.jpeg binary
+*.png  binary
+*.pdf  binary

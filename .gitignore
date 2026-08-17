@@ -1,0 +1,31 @@
+# Arduino build output
+build/
+.arduino/
+*.bin
+*.eep
+*.elf
+*.hex
+*.map
+*.o
+
+# Herramientas / cache local, no forman parte del proyecto
+.impeccable/
+.playwright-mcp/
+node_modules/
+coverage/
+__pycache__/
+.venv/
+*.log
+
+# Editor / SO
+.vscode/
+.idea/
+*.code-workspace
+.DS_Store
+Thumbs.db
+.env
+.env.*
+!.env.example
+
+# Instrucciones locales para asistentes; no se publica
+CLAUDE.md
