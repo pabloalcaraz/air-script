@@ -40,9 +40,9 @@ void exteriorSnapshot(Exterior &out);
 bool exteriorFijarLugar(float lat, float lon, const char *nombre);
 
 // Guarda el token de AQICN en la NVS. Cadena vacia = "sin token", el sondeo
-// vuelve a saltar directo al fallback de Open-Meteo. No dispara un sondeo
-// inmediato por si sola (usa exteriorFijarLugar para eso). Devuelve false si
-// el token no cabe en AQICN_TOKEN_LEN-1 bytes o si falla el acceso a la NVS.
+// vuelve a saltar directo al fallback de Open-Meteo. Invalida cualquier
+// peticion en vuelo y dispara un sondeo nuevo. Devuelve false si el token no
+// cabe en AQICN_TOKEN_LEN-1 bytes o si falla el acceso a la NVS.
 bool exteriorFijarToken(const char *token);
 
 // Atajo para la pantalla: hay dato que merezca ocupar una pagina del OLED.

@@ -42,6 +42,13 @@ function registrarPeor(alertas, n, nombre) {
   }
 }
 
+function resumenParticulas(pm25Actual, pm10Actual) {
+  const alertas = { peor: NIVEL_OK, peorQue: "" };
+  registrarPeor(alertas, nivelPm25(pm25Actual), "PM2.5");
+  registrarPeor(alertas, nivelAlto(pm10Actual, PM10_AVISO, PM10_MALO), "PM10");
+  return alertas;
+}
+
 // --- pruebas ------------------------------------------------------------
 
 let fallos = 0;
@@ -111,6 +118,18 @@ debe("hum=69.9 (justo antes del borde de 70) es AVISO", nivelHum(69.9) === NIVEL
 // Borde 70: MALO empieza en 70 inclusive.
 debe("hum=70 (borde) es MALO", nivelHum(70) === NIVEL_MALO, nivelHum(70));
 debe("hum=70.1 (sobre el borde) es MALO", nivelHum(70.1) === NIVEL_MALO, nivelHum(70.1));
+
+console.log("\n--- Resumen actual frente a exposición de 24 h ---");
+
+// La media histórica puede seguir alta después de ventilar, pero el bloque
+// superior debe coincidir con las tarjetas de lecturas instantáneas.
+{
+  const media24 = nivelPm25(40);
+  const resumen = resumenParticulas(8, 10);
+  debe("la media de 24 h puede seguir en MALO", media24 === NIVEL_MALO, media24);
+  debe("PM2.5 actual correcto limpia el resumen superior",
+    resumen.peor === NIVEL_OK && resumen.peorQue === "", resumen);
+}
 
 console.log(fallos ? "\n" + fallos + " FALLOS" : "\nTodo OK");
 process.exit(fallos ? 1 : 0);

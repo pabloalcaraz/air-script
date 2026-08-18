@@ -1,6 +1,7 @@
 #include <WiFi.h>
 #include <WiFiManager.h>
 #include <ESPmDNS.h>
+#include <esp_heap_caps.h>
 #include "config.h"
 #include "screen.h"
 #include "net.h"
@@ -10,6 +11,21 @@
 EstadoRed red_estado = {false, false, false, "", "", 0, 0};
 
 static bool mdnsArrancado = false;
+static SemaphoreHandle_t tlsCandado = nullptr;
+
+bool redTlsTomar(uint32_t esperaMs) {
+  return tlsCandado &&
+         xSemaphoreTake(tlsCandado, pdMS_TO_TICKS(esperaMs)) == pdTRUE;
+}
+
+void redTlsSoltar() {
+  if (tlsCandado) xSemaphoreGive(tlsCandado);
+}
+
+bool redTlsHayMemoria(uint32_t minimoTotal) {
+  return ESP.getFreeHeap() >= minimoTotal &&
+         heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) >= TLS_BLOQUE_MIN;
+}
 
 // Copia el SSID, la IP y el RSSI actuales al estado publico.
 static void refrescarDatos() {
@@ -42,7 +58,7 @@ static void sincronizarHora(uint32_t esperaMs) {
     if (!antes) {
       // Lo guardado hasta ahora lleva segundos desde el arranque. Sin este
       // ajuste esos eventos aparecerian fechados el 1 de enero de 1970.
-      int32_t desfase = (int32_t)(time(nullptr) - (time_t)(millis() / 1000));
+      int64_t desfase = (int64_t)time(nullptr) - (int64_t)(millis() / 1000);
       logAjustarTs(desfase);
       historialAjustarTs(desfase);
     }
@@ -63,6 +79,10 @@ static void alAbrirPortal(WiFiManager *wm) {
 }
 
 void redInit() {
+  tlsCandado = xSemaphoreCreateMutex();
+  if (!tlsCandado)
+    Serial.println("[RED] No se pudo crear el mutex TLS. Red HTTPS desactivada.");
+
   WiFiManager wm;
   wm.setAPCallback(alAbrirPortal);
   wm.setDebugOutput(false);

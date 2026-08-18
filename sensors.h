@@ -6,7 +6,8 @@
 
 struct EstadoPms {
   bool     valido;         // ha llegado algun frame valido alguna vez
-  bool     rancio;         // despierto y sin frame crudo desde hace PMS_TIMEOUT_MS
+  bool     rancio;         // el ultimo ciclo fallo o lleva demasiado sin frames
+  bool     falloUltimoCiclo; // la ultima ventana termino sin promedio aceptable
   // Duty-cycle (Fase E): dormido es el reposo normal entre muestras, no una
   // averia. Sin esta bandera, web y OLED no pueden distinguir "esta
   // descansando" de "esta roto" durante el silencio deliberado del sueno.

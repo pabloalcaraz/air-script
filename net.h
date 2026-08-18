@@ -20,3 +20,11 @@ extern EstadoRed red_estado;
 void   redInit();       // WiFiManager + mDNS + NTP
 void   redComprobar();  // cada INT_RED: reconexion, RSSI y reintento de NTP
 time_t redAhora();      // epoch si hay NTP; si no, segundos desde arranque
+
+// Los handshakes TLS de cloud y exterior consumen mucha RAM. Se serializan en
+// las tareas de red para que nunca coincidan, sin bloquear el loop principal.
+bool redTlsTomar(uint32_t esperaMs);
+void redTlsSoltar();
+// TLS necesita no solo memoria total, sino un bloque contiguo suficientemente
+// grande para mbedTLS. Evita iniciar un handshake condenado a fragmentar heap.
+bool redTlsHayMemoria(uint32_t minimoTotal);

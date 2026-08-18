@@ -25,4 +25,4 @@ const Evento *logGet(uint16_t i);  // 0 = el mas antiguo; nullptr si i >= count
 
 // Al llegar el NTP, reescribe las marcas anteriores (que eran segundos desde
 // el arranque) para que no aparezcan fechadas en 1970.
-void logAjustarTs(int32_t desfase);
+void logAjustarTs(int64_t desfase);

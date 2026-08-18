@@ -14,7 +14,7 @@ const PMS_TIMEOUT_MS  = 10000;
 
 function crearSimulador() {
   const st = {
-    valido: false, rancio: false, durmiendo: false,
+    valido: false, rancio: false, falloUltimoCiclo: false, durmiendo: false,
     pm1: 0, pm25: 0, pm10: 0, frames: 0, ultimoFrameMs: 0,
   };
   let msCicloIni = 0, msDespertar = 0, pmsCalentando = false, msUltimoCrudo = 0;
@@ -56,18 +56,22 @@ function crearSimulador() {
         if (ahora - msDespertar >= PMS_CALENTAR_MS + PMS_PROMEDIO_MS) {
           if (nProm > 0) {
             st.valido = true;
+            st.falloUltimoCiclo = false;
             st.pm1  = sumPm1  / nProm;
             st.pm25 = sumPm25 / nProm;
             st.pm10 = sumPm10 / nProm;
             st.ultimoFrameMs = ahora;
             st.frames++;
+          } else {
+            st.falloUltimoCiclo = true;
           }
           dormir();
         }
       }
     }
 
-    st.rancio = !st.durmiendo && st.valido && (ahora - msUltimoCrudo > PMS_TIMEOUT_MS);
+    st.rancio = st.falloUltimoCiclo ||
+      (!st.durmiendo && st.valido && (ahora - msUltimoCrudo > PMS_TIMEOUT_MS));
   }
 
   return { st, init, tick };
@@ -141,6 +145,8 @@ console.log("\n--- Ventana de promedio sin ni un frame ---");
   igual("no inventa una lectura de la nada", s.st.valido, false);
   igual("frames sigue en 0", s.st.frames, 0);
   igual("igualmente se va a dormir", s.st.durmiendo, true);
+  igual("el ciclo fallido queda marcado durante el sueño", s.st.rancio, true);
+  igual("se recuerda qué ciclo falló", s.st.falloUltimoCiclo, true);
 }
 
 // --- Averia real tras un ciclo bueno: debe delatarse en <2 min -------------
@@ -169,23 +175,34 @@ console.log("\n--- Averia real (sensor desconectado a mitad de servicio) ---");
   const peorCasoMs = INT_MUESTRA + PMS_TIMEOUT_MS;  // desconexion justo al dormirse
   debe("el peor caso cae bajo el limite de 2 min del criterio de aceptacion",
     peorCasoMs < 120000, String(peorCasoMs));
+
+  // Al terminar la ventana sin datos se duerme, pero el fallo no desaparece.
+  for (let t = 72000; t <= 95000; t += 1000) s.tick(t, null);
+  igual("el fallo persiste durante el sueño posterior", s.st.rancio, true);
+
+  // Un ciclo completo con frames nuevos es lo único que rehabilita el dato.
+  for (let t = 96000; t < 120000; t += 1000) s.tick(t, null);
+  for (let t = 120000; t <= 155000; t += 1000)
+    s.tick(t, { pm1: 2, pm25: 7, pm10: 8 });
+  igual("un promedio nuevo limpia el fallo", s.st.rancio, false);
+  igual("el promedio nuevo sustituye el dato viejo", s.st.pm25, 7);
 }
 
-// --- Duerme y averiado nunca coinciden --------------------------------------
+// --- Dormir sano no genera un falso fallo ----------------------------------
 
 console.log("\n--- durmiendo y rancio son mutuamente excluyentes ---");
 {
   const s = crearSimulador();
   s.init(0);
-  let violacion = false;
+  let falsoFallo = false;
   for (let t = 1000; t <= 200000; t += 500) {
     // Frames aleatorios pero deterministas: unos ciclos con dato, otros sin,
     // para pasar por todas las combinaciones de estado.
     const frame = (t % 7000 < 3000) ? { pm1: 2, pm25: 9, pm10: 11 } : null;
     s.tick(t, frame);
-    if (s.st.durmiendo && s.st.rancio) violacion = true;
+    if (s.st.durmiendo && s.st.rancio && !s.st.falloUltimoCiclo) falsoFallo = true;
   }
-  debe("nunca durmiendo=true y rancio=true a la vez", !violacion, "coincidieron");
+  debe("dormir tras un ciclo sano no crea un falso rancio", !falsoFallo, "se marco");
 }
 
 // --- Cordura de las constantes ---------------------------------------------

@@ -9,10 +9,9 @@
 
 void cloudInit();     // carga config de NVS, arranca "apagado" si no hay nada
 
-// Llamadas periodicas desde loop(), con sus propios temporizadores en
-// air-script.ino (igual que historialGuardar()/alertasCalcular()).
-void cloudTick();     // cada INT_CLOUD: toma una muestra, intenta enviarla
-void cloudDrenar();   // cada INT_CLOUD_DRENAJE: vacia la cola si hay red
+// El loop solo toma y encola una muestra. Una tarea FreeRTOS separada realiza
+// DNS/TLS/HTTP y drena la cola sin bloquear sensores, OLED ni servidor web.
+void cloudTick();
 
 // Config desde la web. Solo admite HTTPS bajo *.grafana.net. Si cambian URL o
 // usuario hay que proporcionar tambien un token nuevo: nunca se reutiliza una

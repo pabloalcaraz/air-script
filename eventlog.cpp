@@ -48,11 +48,11 @@ void logEvento(NivelLog nivel, const char *fmt, ...) {
 
 uint16_t logCount() { return total; }
 
-void logAjustarTs(int32_t desfase) {
+void logAjustarTs(int64_t desfase) {
   for (uint16_t i = 0; i < total; i++) {
     uint16_t inicio = (total == LOG_SIZE) ? cabeza : 0;
     Evento &e = buf[(inicio + i) % LOG_SIZE];
-    if (e.ts < TS_EPOCH_MIN) e.ts = (uint32_t)((int32_t)e.ts + desfase);
+    if (e.ts < TS_EPOCH_MIN) e.ts = (uint32_t)((int64_t)e.ts + desfase);
   }
 }
 

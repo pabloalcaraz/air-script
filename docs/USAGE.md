@@ -70,8 +70,9 @@ También calcula:
 
 - Porcentaje del tiempo en nivel normal, aviso y malo, solo para magnitudes con
   umbrales activos.
-- Tendencia de los últimos 30 minutos por mínimos cuadrados, expresada por
-  hora. Con menos de cinco puntos válidos se devuelve `null`.
+- Tendencia de las últimas 30 muestras por mínimos cuadrados, expresada por
+  hora y calculada con sus timestamps reales. Con menos de cinco puntos válidos
+  se devuelve `null`.
 - Punto de rocío y humedad absoluta mediante la fórmula de Magnus; estos dos
   valores se calculan en el navegador.
 - Minutos desde la última lectura de CO₂ inferior a `CO2_VENTILADO` (600 ppm).
@@ -94,6 +95,9 @@ descarta cuando no hay evidencia suficiente:
 - descenso total inferior a 60 ppm;
 - ajuste con R² inferior a 0,80;
 - resultado no positivo o superior a 20 renovaciones por hora.
+
+Un hueco superior a 90 segundos corta el tramo: el firmware no une dos
+periodos separados ni supone intervalos perfectos si el loop se retrasó.
 
 Que aparezca `null` la mayor parte del tiempo es normal: solo se estima ACH
 cuando existe un decaimiento medible.
@@ -152,7 +156,9 @@ ventilador y del láser:
 Mientras duerme, el OLED conserva el último promedio y muestra `zzz`. El
 silencio esperado durante el reposo no cuenta como dato rancio. Al despertar,
 si no llega ningún frame durante `PMS_TIMEOUT_MS`, el sistema sí lo marca como
-fallo.
+fallo. Ese estado se conserva durante el reposo y no se borra hasta completar
+un ciclo posterior con al menos un frame válido; nunca se recupera por el mero
+hecho de volver a dormir el sensor.
 
 ## SCD41: vigilancia y calibración
 
@@ -192,11 +198,15 @@ que no debe conmutarse de forma periódica.
 contador en RAM de escrituras NVS/EEPROM realizadas desde el último arranque.
 El contador sirve para detectar bucles de escritura y se reinicia al encender.
 
-El backup opcional envía una muestra por minuto mediante Influx Line Protocol.
-Si falla, mantiene hasta 120 muestras en una cola circular de RAM y, al volver
-la conexión, la drena como máximo a una muestra por segundo. La cola no
-sobrevive a un reinicio. Consulta la configuración y los campos exactos en
-[API.md](API.md#backup-en-la-nube).
+El backup opcional encola una muestra por minuto mediante Influx Line Protocol.
+Una tarea de FreeRTOS separada realiza los POST, por lo que una resolución DNS,
+negociación TLS o respuesta lenta no detiene sensores, OLED ni API. Si el
+envío falla, conserva hasta 120 muestras en una cola circular de RAM y aplica
+una espera exponencial de 5 segundos a 5 minutos. Al volver la conexión, drena
+como máximo una muestra por segundo y en orden FIFO. La cola no sobrevive a un
+reinicio y se vacía intencionadamente si cambia el destino o el usuario para
+no enviar medidas antiguas a otra cuenta. Consulta la configuración y los
+campos exactos en [API.md](API.md#backup-en-la-nube).
 
 El token de escritura se guarda en NVS y nunca se devuelve desde la API, pero
 se introduce a través del dashboard HTTP local. Usa esta función solo en una

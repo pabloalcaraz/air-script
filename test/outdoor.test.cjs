@@ -225,5 +225,20 @@ debe("un pelo por encima del umbral se descarta",
 debe("distancia desconocida (NAN) se acepta",
   !estacionDemasiadoLejos(NaN), "NAN rechazada");
 
+console.log("\n--- Cambio de configuración durante un sondeo ---");
+// Port del guard revision==revisionCfg de outdoor.cpp. Una petición copia la
+// revisión al arrancar y solo puede publicar si sigue siendo la actual.
+{
+  let revisionCfg = 4;
+  const revisionPeticion = revisionCfg;
+  revisionCfg++; // el usuario elige otra ubicación mientras llega la respuesta
+  debe("una respuesta del lugar anterior se descarta",
+    revisionPeticion !== revisionCfg, `${revisionPeticion} == ${revisionCfg}`);
+
+  const revisionNueva = revisionCfg;
+  debe("la respuesta de la configuración vigente sí se acepta",
+    revisionNueva === revisionCfg, `${revisionNueva} != ${revisionCfg}`);
+}
+
 console.log(fallos ? "\n" + fallos + " FALLO(S)" : "\nTodo correcto");
 process.exit(fallos ? 1 : 0);

@@ -8,6 +8,7 @@
 #include "outdoor.h"
 #include "outdoor_ca.h"
 #include "flashstats.h"
+#include "net.h"
 
 // Estado compartido entre la tarea de red (nucleo 0) y el loop (nucleo 1).
 // Solo se toca con el mutex cogido, y el mutex nunca se retiene durante una
@@ -16,6 +17,10 @@ static Exterior         exterior;
 static SemaphoreHandle_t candado = nullptr;
 static TaskHandle_t      tarea   = nullptr;
 static char              aqicnToken[AQICN_TOKEN_LEN] = "";
+// Cada cambio de lugar/token invalida las peticiones que ya estaban en vuelo.
+// Sin esta generacion, una respuesta lenta del sitio anterior podia publicarse
+// bajo el nombre y las coordenadas nuevos.
+static uint32_t          revisionCfg = 0;
 
 // ------------------------------------------------------------------ parseo
 
@@ -97,11 +102,48 @@ static float distanciaKm(float lat1, float lon1, float lat2, float lon2) {
 
 // ------------------------------------------------------------------- red
 
+// HTTPClient::getString() puede crecer sin limite si un servidor responde con
+// transferencia chunked y sin Content-Length. Este Stream corta la escritura
+// antes de consumir el heap del dispositivo.
+class StringLimitada : public Stream {
+ public:
+  explicit StringLimitada(String &destino) : excedida(false), dst(destino) {}
+
+  size_t write(uint8_t b) override { return write(&b, 1); }
+  size_t write(const uint8_t *buf, size_t n) override {
+    size_t libre = EXT_RESPUESTA_MAX - dst.length();
+    size_t tomar = n < libre ? n : libre;
+    if (tomar && !dst.concat((const char *)buf, (unsigned)tomar)) {
+      setWriteError();
+      return 0;
+    }
+    if (tomar != n) {
+      excedida = true;
+      setWriteError();
+    }
+    return tomar;
+  }
+  int available() override { return 0; }
+  int read() override { return -1; }
+  int peek() override { return -1; }
+  void flush() override {}
+
+  bool excedida;
+
+ private:
+  String &dst;
+};
+
 // AQICN y Open-Meteo usan actualmente una cadena de Let's Encrypt anclada en
 // ISRG Root X1. Validarla protege tanto el token AQICN como la integridad del
 // consejo de ventilacion frente a respuestas manipuladas.
 static bool descargar(const char *url, String &cuerpo, int16_t &code,
                        uint32_t timeoutMs) {
+  if (!redTlsTomar(RED_TLS_ESPERA_MS)) {
+    code = -1001;  // otra tarea HTTPS esta usando el presupuesto TLS
+    return false;
+  }
+
   WiFiClientSecure cli;
   cli.setCACert(OUTDOOR_ROOT_CA);
 
@@ -111,13 +153,31 @@ static bool descargar(const char *url, String &cuerpo, int16_t &code,
   http.setReuse(false);
   if (!http.begin(cli, url)) {
     code = -1000;  // ni siquiera se pudo formar la peticion
+    redTlsSoltar();
     return false;
   }
   int r = http.GET();
   code = (int16_t)r;
   bool ok = (r == HTTP_CODE_OK);
-  if (ok) cuerpo = http.getString();
+  int tam = http.getSize();
+  if (ok && tam > (int)EXT_RESPUESTA_MAX) {
+    code = -1002;  // respuesta inesperadamente grande; no arriesgar el heap
+    ok = false;
+  }
+  if (ok) {
+    if (tam > 0) cuerpo.reserve((unsigned)tam + 1);
+    StringLimitada salida(cuerpo);
+    int escritos = http.writeToStream(&salida);
+    if (salida.excedida) {
+      code = -1002;
+      ok = false;
+    } else if (escritos < 0) {
+      code = (int16_t)escritos;
+      ok = false;
+    }
+  }
   http.end();
+  redTlsSoltar();
   return ok;
 }
 
@@ -125,7 +185,8 @@ static bool descargar(const char *url, String &cuerpo, int16_t &code,
 // contadores intentos/fallos si falla: el fallback a Open-Meteo que viene
 // despues es el que lleva la cuenta de "sondeo fallido", para no contar dos
 // veces el mismo ciclo de 30 min como dos fallos.
-static bool sondearAqicn(float lat, float lon, const char *token) {
+static bool sondearAqicn(float lat, float lon, const char *token,
+                         uint32_t revision) {
   char url[200];
   snprintf(url, sizeof url,
            "https://api.waqi.info/feed/geo:%.4f;%.4f/?token=%s",
@@ -181,6 +242,10 @@ static bool sondearAqicn(float lat, float lon, const char *token) {
   if (isfinite(distKm) && distKm > AQICN_MAX_KM) return false;
 
   if (candado && xSemaphoreTake(candado, portMAX_DELAY) == pdTRUE) {
+    if (revision != revisionCfg) {
+      xSemaphoreGive(candado);
+      return false;
+    }
     exterior.intentos++;
     exterior.httpCode = code;
     exterior.pm25 = pm25;
@@ -208,7 +273,7 @@ static bool sondearAqicn(float lat, float lon, const char *token) {
 // Modelo CAMS de Open-Meteo: particulas primero, meteorologia despues. Si la
 // segunda falla se conservan las particulas, que son el dato que justifica
 // la funcion. Es el sondeo original del proyecto, sin cambios de logica.
-static bool sondearOpenMeteo(float lat, float lon) {
+static bool sondearOpenMeteo(float lat, float lon, uint32_t revision) {
   char url[220];
   String cuerpo;
   int16_t code = 0;
@@ -234,6 +299,10 @@ static bool sondearOpenMeteo(float lat, float lon) {
 
   if (!hayPart) {
     if (candado && xSemaphoreTake(candado, portMAX_DELAY) == pdTRUE) {
+      if (revision != revisionCfg) {
+        xSemaphoreGive(candado);
+        return false;
+      }
       exterior.intentos++;
       exterior.fallos++;
       exterior.httpCode = code;
@@ -261,6 +330,10 @@ static bool sondearOpenMeteo(float lat, float lon) {
   }
 
   if (candado && xSemaphoreTake(candado, portMAX_DELAY) == pdTRUE) {
+    if (revision != revisionCfg) {
+      xSemaphoreGive(candado);
+      return false;
+    }
     exterior.intentos++;
     exterior.httpCode = code;
     exterior.pm25 = pm25;
@@ -287,7 +360,7 @@ static bool sondearOpenMeteo(float lat, float lon) {
 // Intenta primero la estacion real; si no hay token, si AQICN falla, o si la
 // estacion mas cercana no tiene PM2.5, cae al modelo sin tratarlo como un
 // error: es el comportamiento normal sin token o con AQICN caido.
-static bool sondear(float lat, float lon) {
+static bool sondear(float lat, float lon, uint32_t revision) {
   char token[AQICN_TOKEN_LEN];
   token[0] = '\0';
   if (candado && xSemaphoreTake(candado, portMAX_DELAY) == pdTRUE) {
@@ -295,8 +368,17 @@ static bool sondear(float lat, float lon) {
     token[sizeof token - 1] = '\0';
     xSemaphoreGive(candado);
   }
-  if (token[0] && sondearAqicn(lat, lon, token)) return true;
-  return sondearOpenMeteo(lat, lon);
+  if (token[0] && sondearAqicn(lat, lon, token, revision)) return true;
+
+  // Si la configuracion cambio durante AQICN, no se desperdicia otro TLS con
+  // las coordenadas antiguas. La notificacion pendiente despierta la tarea y
+  // la siguiente vuelta toma la configuracion nueva.
+  if (candado && xSemaphoreTake(candado, portMAX_DELAY) == pdTRUE) {
+    bool vigente = revision == revisionCfg;
+    xSemaphoreGive(candado);
+    if (!vigente) return false;
+  }
+  return sondearOpenMeteo(lat, lon, revision);
 }
 
 // La peticion es sincrona y puede tardar segundos: por eso vive en su propia
@@ -306,10 +388,12 @@ static void tareaExterior(void *) {
   for (;;) {
     bool  hacer = false;
     float lat = 0, lon = 0;
+    uint32_t revision = 0;
     if (candado && xSemaphoreTake(candado, portMAX_DELAY) == pdTRUE) {
       hacer = exterior.configurado;
       lat = exterior.lat;
       lon = exterior.lon;
+      revision = revisionCfg;
       xSemaphoreGive(candado);
     }
 
@@ -317,7 +401,7 @@ static void tareaExterior(void *) {
     if (hacer && WiFi.status() == WL_CONNECTED) {
       // El handshake TLS pide ~45 KB de golpe. Con el heap justo, intentarlo
       // no consigue el dato y ademas se lleva por delante el servidor web.
-      if (ESP.getFreeHeap() >= EXT_HEAP_MIN) ok = sondear(lat, lon);
+      if (redTlsHayMemoria(EXT_HEAP_MIN)) ok = sondear(lat, lon, revision);
     }
 
     // Espera despertable: cambiar de localizacion no puede obligar a esperar
@@ -396,7 +480,7 @@ void exteriorSnapshot(Exterior &out) {
 }
 
 bool exteriorFijarLugar(float lat, float lon, const char *nombre) {
-  if (!candado || !nombre || isnan(lat) || isnan(lon)) return false;
+  if (!candado || !nombre || !nombre[0] || isnan(lat) || isnan(lon)) return false;
   if (lat < -90.0f || lat > 90.0f || lon < -180.0f || lon > 180.0f) return false;
 
   Preferences p;
@@ -405,8 +489,8 @@ bool exteriorFijarLugar(float lat, float lon, const char *nombre) {
   size_t nLon   = p.putFloat("lon", lon);
   size_t nLugar = p.putString("lugar", nombre);
   p.end();
+  contarEscrituraFlash((nLat ? 1 : 0) + (nLon ? 1 : 0) + (nLugar ? 1 : 0));
   if (nLat != sizeof lat || nLon != sizeof lon || nLugar == 0) return false;
-  contarEscrituraFlash();
 
   bool actualizado = false;
   if (xSemaphoreTake(candado, portMAX_DELAY) == pdTRUE) {
@@ -426,6 +510,7 @@ bool exteriorFijarLugar(float lat, float lon, const char *nombre) {
     exterior.estacion[0] = '\0';
     exterior.distanciaKm = NAN;
     exterior.ultimaMs = 0;
+    revisionCfg++;
     actualizado = true;
     xSemaphoreGive(candado);
   }
@@ -442,18 +527,31 @@ bool exteriorFijarToken(const char *token) {
 
   Preferences p;
   if (!p.begin(EXT_NVS_NS, false)) return false;
-  p.putString("aqicn", token);
-  bool guardado = p.getString("aqicn", "\x01") == token;
+  bool guardado, huboEscritura = false;
+  if (token[0]) {
+    size_t escritos = p.putString("aqicn", token);
+    guardado = escritos > 0 && p.getString("aqicn", "\x01") == token;
+    huboEscritura = guardado;
+  } else {
+    bool existia = p.isKey("aqicn");
+    guardado = !existia || p.remove("aqicn");
+    huboEscritura = existia && guardado;
+  }
   p.end();
+  if (huboEscritura) contarEscrituraFlash();
   if (!guardado) return false;
-  contarEscrituraFlash();
 
   bool actualizado = false;
   if (xSemaphoreTake(candado, portMAX_DELAY) == pdTRUE) {
     strncpy(aqicnToken, token, sizeof aqicnToken - 1);
     aqicnToken[sizeof aqicnToken - 1] = '\0';
+    revisionCfg++;
     actualizado = true;
     xSemaphoreGive(candado);
+  }
+  if (actualizado) {
+    if (tarea) xTaskNotifyGive(tarea);
+    else if (exterior.configurado) actualizado = arrancarTareaExterior();
   }
   return actualizado;
 }

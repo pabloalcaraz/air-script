@@ -8,7 +8,7 @@
 #include "sensors.h"
 #include "flashstats.h"
 
-EstadoPms pms_estado = {false, false, false, 0, 0, 0, 0, 0};
+EstadoPms pms_estado = {false, false, false, false, 0, 0, 0, 0, 0};
 EstadoScd scd_estado = {
   false, false, 0, "arranque", 0, 0, 0, 0, 0,          // lectura y errores
   0, false, false, 0, 0, 0.0f, 0.0f, 0, 0, SELFTEST_SIN_HACER, 0  // vigilancia
@@ -22,10 +22,10 @@ static uint32_t msArranque = 0;  // para no dar por averiado un sensor que aun c
 static uint32_t msPrimeraLectura = 0;  // cuando entrego su primer dato bueno
 static uint32_t msUltimoIntento = 0;   // ultimo reinicio automatico lanzado
 
-// Duty-cycle del PMS5003 (Fase E). El sensor pasa dormido la mayor parte del
-// minuto (SET=LOW): el laser esta especificado para ~8000 h y en continuo se
-// gasta en menos de un anio; con esto llega a las ~20000 h de vida, unos 20
-// anios.
+// Duty-cycle del PMS5003. Con la configuracion actual permanece despierto unos
+// 35 s por minuto (30 s de calentamiento + 5 s de promedio). Reduce el desgaste
+// frente al funcionamiento continuo, pero no permite prometer una vida util
+// concreta: depende del entorno, el ventilador y el ciclo finalmente usado.
 static uint32_t msCicloIni    = 0;      // ancla del periodo de INT_MUESTRA
 static uint32_t msDespertar   = 0;      // millis() del despertar en curso
 static bool     pmsCalentando = false;  // tramo cuyos frames se descartan
@@ -35,6 +35,7 @@ static uint16_t nProm  = 0;
 
 // Registra un fallo del SCD41: guarda etapa + codigo y lo reporta por serie.
 static void scdFallo(const char *etapa, int16_t error) {
+  scd_estado.presenteI2c = i2cResponde(SCD41_ADDR);
   scd_estado.etapa = etapa;
   scd_estado.error = error;
   scd_estado.errores++;
@@ -62,9 +63,10 @@ static void scdDatoInvalido(uint16_t co2, float temp, float hum) {
 
 // Secuencia de arranque del SCD41 respetando los tiempos del datasheet.
 static void iniciarScd41() {
-  scd_estado.presenteI2c = bus_i2c.scd41;
+  scd_estado.presenteI2c = i2cResponde(SCD41_ADDR);
 
   int16_t error;
+  bool configOk = true;
   scd4x.begin(Wire, SCD41_I2C_ADDR_62);
   delay(30);
 
@@ -75,28 +77,31 @@ static void iniciarScd41() {
   // stop_periodic_measurement tarda 500 ms en ejecutarse. Sin esta espera
   // el siguiente comando llega al sensor a medias y lo deja colgado.
   error = scd4x.stopPeriodicMeasurement();
-  if (error) scdFallo("stopPeriodicMeasurement", error);
+  if (error) { scdFallo("stopPeriodicMeasurement", error); configOk = false; }
   delay(500);
 
   error = scd4x.reinit();
-  if (error) scdFallo("reinit", error);
+  if (error) { scdFallo("reinit", error); configOk = false; }
   delay(30);
 
   // La altitud no se persiste en la EEPROM a proposito: se aplica en cada
   // arranque y asi no se gastan ciclos de escritura por un dato que ya esta
   // en config.h. Sin ella el sensor asume el nivel del mar.
-  scd4x.setSensorAltitude(ALTITUD_M);
+  error = scd4x.setSensorAltitude(ALTITUD_M);
+  if (error) { scdFallo("setSensorAltitude", error); configOk = false; }
   delay(30);
 
   // Lecturas de diagnostico: sin ellas no hay forma de saber si el ASC esta
   // desviando la referencia ni de detectar que el chip se ha reiniciado solo.
-  scd4x.getAutomaticSelfCalibrationEnabled(scd_estado.asc);
-  scd4x.getSerialNumber(scd_estado.serie);
+  error = scd4x.getAutomaticSelfCalibrationEnabled(scd_estado.asc);
+  if (error) { scdFallo("getASC", error); configOk = false; }
+  error = scd4x.getSerialNumber(scd_estado.serie);
+  if (error) { scdFallo("getSerialNumber", error); configOk = false; }
 
   error = scd4x.startPeriodicMeasurement();
   if (error) {
     scdFallo("startPeriodicMeasurement", error);
-  } else {
+  } else if (configOk) {
     scd_estado.error = 0;
     scd_estado.etapa = "midiendo";
     // Se parte de "recien leido" para que el vigilante no cuente como rancios
@@ -105,6 +110,12 @@ static void iniciarScd41() {
     scd_estado.msValorIgual    = millis();
     Serial.printf("[SCD41] Arrancado OK. ASC=%u, altitud=%u m. Primer dato en ~5s.\n",
                   (unsigned)scd_estado.asc, (unsigned)ALTITUD_M);
+  }
+  if (!error) {
+    // Incluso si fallo una lectura diagnostica, el modo periodico ha arrancado
+    // y necesita su margen normal antes de que el watchdog juzgue el resultado.
+    scd_estado.ultimaLecturaMs = millis();
+    scd_estado.msValorIgual    = millis();
   }
 }
 
@@ -190,22 +201,29 @@ void sensoresLeerPms() {
         // abajo lo delate por su cuenta.
         if (nProm > 0) {
           pms_estado.valido = true;
+          pms_estado.falloUltimoCiclo = false;
           pms_estado.pm1  = sumPm1  / nProm;
           pms_estado.pm25 = sumPm25 / nProm;
           pms_estado.pm10 = sumPm10 / nProm;
           pms_estado.ultimoFrameMs = ahora;
           pms_estado.frames++;
+        } else {
+          // El valor anterior deja de representar el ciclo actual. Mantener
+          // este fallo durante el sueno evita que saludPms() vuelva a OK solo
+          // porque SET=LOW hace normal el silencio de la UART.
+          pms_estado.falloUltimoCiclo = true;
         }
         pmsDormir();
       }
     }
   }
 
-  // Rancio solo tiene sentido despierto: dormido, el silencio es el
-  // comportamiento normal del duty-cycle, no una averia. Sin este guarda la
-  // Fase E generaria una alarma falsa en cada sueno.
-  pms_estado.rancio = !pms_estado.durmiendo && pms_estado.valido &&
-                      (ahora - msUltimoCrudo > PMS_TIMEOUT_MS);
+  // Dormir no es un fallo por si solo. Sin embargo, si la ventana que acaba de
+  // terminar no produjo ningun promedio, el dato anterior sigue rancio hasta
+  // que otro ciclo completo acepte una muestra nueva.
+  pms_estado.rancio = pms_estado.falloUltimoCiclo ||
+                      (!pms_estado.durmiendo && pms_estado.valido &&
+                       ahora - msUltimoCrudo > PMS_TIMEOUT_MS);
 }
 
 void sensoresLeerScd41() {
@@ -249,6 +267,7 @@ void sensoresLeerScd41() {
   scd_estado.temp = temp;
   scd_estado.hum  = hum;
   scd_estado.valido = true;
+  scd_estado.presenteI2c = true;
   scd_estado.error  = 0;
   scd_estado.etapa  = "midiendo";
   scd_estado.reads++;
@@ -285,27 +304,32 @@ void sensoresRevisarScd() {
 }
 
 bool sensoresReiniciarScd() {
+  bool configOk = true;
   int16_t error = scd4x.stopPeriodicMeasurement();
-  if (error) scdFallo("reset/stop", error);
+  if (error) { scdFallo("reset/stop", error); configOk = false; }
   delay(500);  // stop tarda 500 ms en ejecutarse
 
   // Apagado real del sensor. reinit() solo recarga la configuracion desde la
   // EEPROM: si lo que esta colgado es la maquina de estados interna, no la
   // toca. powerDown corta su alimentacion interna, que es justo lo que hace
   // desenchufar el aparato, y sin pin de reset es la unica via.
-  scd4x.powerDown();
+  error = scd4x.powerDown();
+  if (error) { scdFallo("reset/powerDown", error); configOk = false; }
   delay(50);
   scd4x.wakeUp();  // no devuelve ACK por diseno: su "error" es normal
   delay(30);
 
   error = scd4x.reinit();
-  if (error) scdFallo("reset/reinit", error);
+  if (error) { scdFallo("reset/reinit", error); configOk = false; }
   delay(30);
 
-  scd4x.setSensorAltitude(ALTITUD_M);
+  error = scd4x.setSensorAltitude(ALTITUD_M);
+  if (error) { scdFallo("reset/altitud", error); configOk = false; }
   delay(30);
-  scd4x.getAutomaticSelfCalibrationEnabled(scd_estado.asc);
-  scd4x.getSerialNumber(scd_estado.serie);
+  error = scd4x.getAutomaticSelfCalibrationEnabled(scd_estado.asc);
+  if (error) { scdFallo("reset/ASC", error); configOk = false; }
+  error = scd4x.getSerialNumber(scd_estado.serie);
+  if (error) { scdFallo("reset/serie", error); configOk = false; }
 
   error = scd4x.startPeriodicMeasurement();
   scd_estado.reinicios++;
@@ -316,8 +340,10 @@ bool sensoresReiniciarScd() {
     return false;
   }
 
-  scd_estado.error = 0;
-  scd_estado.etapa = "midiendo";
+  if (configOk) {
+    scd_estado.error = 0;
+    scd_estado.etapa = "midiendo";
+  }
   // Se le da margen limpio: sin esto el propio reinicio seguiria contando como
   // rancio y dispararia otro reinicio en la siguiente revision, en bucle.
   scd_estado.ultimaLecturaMs = millis();
@@ -326,7 +352,7 @@ bool sensoresReiniciarScd() {
   scd_estado.congelado = false;
   Serial.printf("[SCD41] Reiniciado (%lu en total)\n",
                 (unsigned long)scd_estado.reinicios);
-  return true;
+  return configOk;
 }
 
 int16_t sensoresAutotestScd(uint16_t &estado) {
@@ -373,7 +399,11 @@ int16_t sensoresSetAscScd(bool activo) {
     if (!error) contarEscrituraFlash();
     delay(800);
   }
-  scd4x.getAutomaticSelfCalibrationEnabled(scd_estado.asc);
+  int16_t errLecturaAsc = scd4x.getAutomaticSelfCalibrationEnabled(scd_estado.asc);
+  if (errLecturaAsc) {
+    scdFallo("asc/verificar", errLecturaAsc);
+    if (!error) error = errLecturaAsc;
+  }
 
   int16_t errStart = scd4x.startPeriodicMeasurement();
   msPrimeraLectura = 0;

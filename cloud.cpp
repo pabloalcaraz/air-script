@@ -22,6 +22,24 @@ static uint16_t colaCuenta = 0;
 
 static uint32_t enviosOk = 0, enviosFallo = 0, ultimoEnvioMs = 0;
 static const char *ultimoErrorCfg = "";
+static SemaphoreHandle_t candado = nullptr;
+static TaskHandle_t tarea = nullptr;
+static uint32_t revisionCfg = 0;
+static uint32_t proximoIntentoMs = 0;
+static uint32_t reintentoMs = CLOUD_REINTENTO_MIN_MS;
+
+static void tareaCloud(void *);
+
+static bool arrancarTareaCloud() {
+  if (tarea) return true;
+  tarea = nullptr;
+  BaseType_t creada = xTaskCreatePinnedToCore(
+    tareaCloud, "cloud", CLOUD_TAREA_STACK, nullptr, 1, &tarea, 0);
+  if (creada == pdPASS && tarea) return true;
+  tarea = nullptr;
+  Serial.println("[CLOUD] No se pudo crear la tarea de envio.");
+  return false;
+}
 
 // La URL contiene credenciales indirectamente: determina a quien se manda la
 // cabecera Basic Auth. Se restringe a HTTPS y a un subdominio real de Grafana,
@@ -44,13 +62,23 @@ static bool destinoSeguro(const char *url) {
          strncasecmp(host + nHost - nSufijo, CLOUD_HOST_SUFFIX, nSufijo) == 0;
 }
 
-static bool configValida() {
+// Solo se llama con `candado` tomado, o durante cloudInit() antes de crear la
+// tarea. Evita copiar credenciales a medias mientras la web las actualiza.
+static bool configValidaSinLock() {
   return urlCfg[0] && userCfg[0] && tokenCfg[0] && destinoSeguro(urlCfg);
 }
 
 static bool guardarString(Preferences &p, const char *clave, const char *valor) {
-  p.putString(clave, valor);
-  return p.getString(clave, "\x01") == valor;
+  if (!valor[0]) {
+    if (!p.isKey(clave)) return true;
+    bool borrado = p.remove(clave);
+    if (borrado) contarEscrituraFlash();
+    return borrado;
+  }
+  size_t escritos = p.putString(clave, valor);
+  bool guardado = escritos > 0 && p.getString(clave, "\x01") == valor;
+  if (guardado) contarEscrituraFlash();
+  return guardado;
 }
 
 static void colaEncolar(const Muestra &m) {
@@ -69,6 +97,12 @@ static bool colaDesencolar(Muestra &out) {
 }
 
 void cloudInit() {
+  candado = xSemaphoreCreateMutex();
+  if (!candado) {
+    Serial.println("[CLOUD] No se pudo crear el mutex. Backup desactivado.");
+    return;
+  }
+
   Preferences p;
   if (p.begin(CLOUD_NVS_NS, true)) {
     p.getString("cloud_url",  urlCfg,   sizeof urlCfg);
@@ -77,12 +111,13 @@ void cloudInit() {
     activoCfg = p.getBool("cloud_on", false);
     p.end();
   }
-  if (activoCfg && !configValida()) {
+  if (activoCfg && !configValidaSinLock()) {
     activoCfg = false;
     Serial.println("[CLOUD] Config insegura o incompleta: backup desactivado.");
   }
   if (activoCfg && urlCfg[0])
     Serial.printf("[CLOUD] Backup activo -> %s\n", urlCfg);
+  if (activoCfg && !arrancarTareaCloud()) activoCfg = false;
 }
 
 bool cloudConfigurar(const char *url, const char *usuario, const char *token,
@@ -116,6 +151,14 @@ bool cloudConfigurar(const char *url, const char *usuario, const char *token,
     ultimoErrorCfg = "Para activar el backup hacen falta URL, usuario y token";
     return false;
   }
+  if (!candado) {
+    ultimoErrorCfg = "Subsistema cloud no disponible";
+    return false;
+  }
+  if (activo && !arrancarTareaCloud()) {
+    ultimoErrorCfg = "No se pudo crear la tarea de envio";
+    return false;
+  }
 
   Preferences p;
   if (!p.begin(CLOUD_NVS_NS, false)) {
@@ -125,14 +168,20 @@ bool cloudConfigurar(const char *url, const char *usuario, const char *token,
   bool ok = guardarString(p, "cloud_url", url) &&
             guardarString(p, "cloud_user", usuario);
   if (ok && tocaToken) ok = guardarString(p, "cloud_tok", token);
-  if (ok) ok = p.putBool("cloud_on", activo) == 1;
+  if (ok) {
+    size_t escritos = p.putBool("cloud_on", activo);
+    if (escritos) contarEscrituraFlash();
+    ok = escritos == 1;
+  }
   p.end();
   if (!ok) {
     ultimoErrorCfg = "No se pudo verificar la escritura en la NVS";
     return false;
   }
-  contarEscrituraFlash();
-
+  if (xSemaphoreTake(candado, portMAX_DELAY) != pdTRUE) {
+    ultimoErrorCfg = "No se pudo bloquear la configuracion cloud";
+    return false;
+  }
   strncpy(urlCfg, url, sizeof urlCfg - 1);       urlCfg[sizeof urlCfg - 1] = '\0';
   strncpy(userCfg, usuario, sizeof userCfg - 1); userCfg[sizeof userCfg - 1] = '\0';
   if (tocaToken) {
@@ -140,12 +189,32 @@ bool cloudConfigurar(const char *url, const char *usuario, const char *token,
     tokenCfg[sizeof tokenCfg - 1] = '\0';
   }
   activoCfg = activo;
+  if (cambiaDestino) {
+    colaCabeza = 0;
+    colaCuenta = 0;
+  }
+  revisionCfg++;
+  proximoIntentoMs = 0;
+  reintentoMs = CLOUD_REINTENTO_MIN_MS;
+  xSemaphoreGive(candado);
+  if (tarea) xTaskNotifyGive(tarea);
   return true;
+}
+
+// Un POST fallido debe volver a ser el mas antiguo. Si la cola se lleno
+// mientras la red estaba ocupada, se descarta el dato mas nuevo.
+static void colaReinsertarFrente(const Muestra &m) {
+  if (colaCuenta == CLOUD_BUFFER) colaCuenta--;  // descarta el ultimo logico
+  colaCabeza = (colaCabeza + CLOUD_BUFFER - 1) % CLOUD_BUFFER;
+  cola[colaCabeza] = m;
+  colaCuenta++;
 }
 
 const char *cloudErrorConfig() { return ultimoErrorCfg; }
 
 void cloudSnapshot(CloudEstado &out) {
+  memset(&out, 0, sizeof out);
+  if (!candado || xSemaphoreTake(candado, portMAX_DELAY) != pdTRUE) return;
   out.activo = activoCfg;
   out.hayToken = tokenCfg[0] != '\0';
   out.configurado = urlCfg[0] && userCfg[0] && out.hayToken;
@@ -157,6 +226,7 @@ void cloudSnapshot(CloudEstado &out) {
   out.url[sizeof out.url - 1] = '\0';
   strncpy(out.usuario, userCfg, sizeof out.usuario - 1);
   out.usuario[sizeof out.usuario - 1] = '\0';
+  xSemaphoreGive(candado);
 }
 
 // Formato Influx Line Protocol. Campos ausentes (sensor caido, centinela
@@ -191,16 +261,16 @@ static size_t cloudLinea(char *dst, size_t n, const Muestra &m) {
   return snprintf(dst, n, "aire,dispositivo=airscript %s", campos);
 }
 
-// POST bloqueante (igual que outdoor.cpp: sin FreeRTOS task propia, se
-// llama solo desde los temporizadores del loop principal a 1 Hz como mucho,
-// nunca desde el hot path).
-static bool enviarLinea(const char *linea) {
+// POST bloqueante, pero exclusivamente dentro de tareaCloud(). El loop
+// principal solo encola y nunca espera a DNS, TLS ni al servidor de Grafana.
+static bool enviarLinea(const char *linea, const char *url,
+                        const char *usuario, const char *token) {
   WiFiClientSecure cli;
   cli.setCACert(CLOUD_ROOT_CA);
   HTTPClient http;
   http.setTimeout(CLOUD_TIMEOUT_MS);
-  if (!http.begin(cli, urlCfg)) return false;
-  http.setAuthorization(userCfg, tokenCfg);
+  if (!http.begin(cli, url)) return false;
+  http.setAuthorization(usuario, token);
   http.addHeader("Content-Type", "text/plain");
   int code = http.POST((uint8_t *)linea, strlen(linea));
   http.end();
@@ -224,7 +294,7 @@ static void tomarMuestra(Muestra &m) {
 }
 
 void cloudTick() {
-  if (!activoCfg || !configValida()) return;
+  if (!candado) return;
 
   Muestra m;
   tomarMuestra(m);
@@ -232,33 +302,80 @@ void cloudTick() {
   size_t n = cloudLinea(linea, sizeof linea, m);
   if (n == 0) return;  // nada que mandar este minuto
 
-  if (WiFi.status() == WL_CONNECTED && enviarLinea(linea)) {
-    enviosOk++;
-    ultimoEnvioMs = millis();
-  } else {
-    enviosFallo++;
-    colaEncolar(m);  // se reintenta luego via cloudDrenar()
-  }
+  if (xSemaphoreTake(candado, portMAX_DELAY) != pdTRUE) return;
+  bool activo = activoCfg && configValidaSinLock();
+  if (activo) colaEncolar(m);
+  xSemaphoreGive(candado);
+  if (activo && tarea) xTaskNotifyGive(tarea);
 }
 
-void cloudDrenar() {
-  if (!activoCfg || !configValida()) return;
-  if (WiFi.status() != WL_CONNECTED) return;
+static bool antesDe(uint32_t ahora, uint32_t objetivo) {
+  return objetivo && (int32_t)(ahora - objetivo) < 0;
+}
 
-  Muestra m;
-  if (!colaDesencolar(m)) return;  // cola vacia, nada que hacer
+static void tareaCloud(void *) {
+  for (;;) {
+    Muestra m;
+    char url[CLOUD_URL_LEN] = "";
+    char usuario[CLOUD_USER_LEN] = "";
+    char token[CLOUD_TOKEN_LEN] = "";
+    uint32_t revision = 0;
+    bool listo = false;
+    uint32_t ahora = millis();
 
-  char linea[220];
-  size_t n = cloudLinea(linea, sizeof linea, m);
-  if (n == 0) return;  // no deberia pasar (ya se filtro al encolar), defensivo
+    if (candado && xSemaphoreTake(candado, portMAX_DELAY) == pdTRUE) {
+      listo = activoCfg && configValidaSinLock() && colaCuenta > 0 &&
+              WiFi.status() == WL_CONNECTED &&
+              !antesDe(ahora, proximoIntentoMs);
+      if (listo) {
+        colaDesencolar(m);
+        strncpy(url, urlCfg, sizeof url - 1);
+        strncpy(usuario, userCfg, sizeof usuario - 1);
+        strncpy(token, tokenCfg, sizeof token - 1);
+        revision = revisionCfg;
+      }
+      xSemaphoreGive(candado);
+    }
 
-  if (enviarLinea(linea)) {
-    enviosOk++;
-    ultimoEnvioMs = millis();
-  } else {
-    // Vuelve a la cola en su sitio mas antiguo: si el servidor sigue caido,
-    // no tiene sentido perder la muestra por un solo intento fallido.
-    colaEncolar(m);
-    enviosFallo++;
+    if (!listo) {
+      ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(CLOUD_TAREA_POLL_MS));
+      continue;
+    }
+
+    char linea[220];
+    size_t n = cloudLinea(linea, sizeof linea, m);
+    if (n == 0) continue;
+
+    bool recursos = redTlsHayMemoria(CLOUD_HEAP_MIN) &&
+                    redTlsTomar(RED_TLS_ESPERA_MS);
+    bool enviado = false;
+    if (recursos) {
+      enviado = enviarLinea(linea, url, usuario, token);
+      redTlsSoltar();
+    }
+
+    if (xSemaphoreTake(candado, portMAX_DELAY) == pdTRUE) {
+      bool mismaConfig = revision == revisionCfg;
+      if (enviado) {
+        enviosOk++;
+        ultimoEnvioMs = millis();
+        if (mismaConfig) {
+          reintentoMs = CLOUD_REINTENTO_MIN_MS;
+          proximoIntentoMs = millis() + INT_CLOUD_DRENAJE;
+        }
+      } else if (mismaConfig) {
+        colaReinsertarFrente(m);
+        if (recursos) {
+          enviosFallo++;
+          proximoIntentoMs = millis() + reintentoMs;
+          uint32_t doble = reintentoMs * 2;
+          reintentoMs = doble < CLOUD_REINTENTO_MAX_MS
+                      ? doble : CLOUD_REINTENTO_MAX_MS;
+        } else {
+          proximoIntentoMs = millis() + CLOUD_TAREA_POLL_MS;
+        }
+      }
+      xSemaphoreGive(candado);
+    }
   }
 }

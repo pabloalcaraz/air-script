@@ -39,4 +39,4 @@ const Muestra *historialGet(uint16_t i);  // 0 = la mas antigua
 
 // Igual que en el log: al sincronizar la hora se corrigen hacia atras las
 // muestras tomadas mientras no la habia.
-void historialAjustarTs(int32_t desfase);
+void historialAjustarTs(int64_t desfase);

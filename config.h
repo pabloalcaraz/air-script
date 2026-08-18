@@ -133,6 +133,11 @@
 // El handshake TLS reserva ~45 KB de golpe. Si no los hay, no se intenta:
 // quedarse sin heap tumbaria el servidor web, que si es imprescindible.
 #define EXT_HEAP_MIN    60000
+#define TLS_BLOQUE_MIN  45000
+#define EXT_RESPUESTA_MAX 49152
+// Tiempo maximo que una tarea HTTPS espera a que la otra libere mbedTLS. Si
+// vence, reintenta luego: bloquear una tarea es preferible a agotar el heap.
+#define RED_TLS_ESPERA_MS 1000
 // mbedtls necesita holgura de pila. Con 4096 el handshake la desborda y el
 // panic sale como "Stack canary watchpoint triggered", que no dice nada.
 #define EXT_TAREA_STACK 8192
@@ -187,6 +192,9 @@
 // ---- Historial (Fase 3) ----
 #define HIST_SIZE       1440  // 24 h a una muestra por minuto
 #define HIST_MAX_PUNTOS 240   // maximo que devuelve la API tras downsampling
+// Un hueco mayor no se interpola como si las muestras siguieran separadas un
+// minuto. Deja margen para operaciones puntuales como el autotest del SCD41.
+#define HIST_HUECO_MAX_S 90UL
 
 // ---- Log de eventos (Fase 3) ----
 #define LOG_SIZE    80
@@ -215,6 +223,11 @@
 // superar el limite antiguo de 99 caracteres.
 #define CLOUD_TOKEN_LEN       171
 #define CLOUD_TIMEOUT_MS      8000
+#define CLOUD_TAREA_STACK      8192
+#define CLOUD_TAREA_POLL_MS    1000UL
+#define CLOUD_REINTENTO_MIN_MS 5000UL
+#define CLOUD_REINTENTO_MAX_MS 300000UL
+#define CLOUD_HEAP_MIN         60000
 // El backup usa credenciales de escritura. Para no enviarlas a un destino
 // arbitrario, solo se aceptan endpoints HTTPS oficiales de Grafana Cloud.
 #define CLOUD_HOST_SUFFIX  ".grafana.net"

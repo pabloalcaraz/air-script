@@ -64,11 +64,11 @@ void alertasCalcular() {
   if (saludPms() == SALUD_OK) {
     alertas.pm25 = nivelPm25(pms_estado.pm25);
     alertas.pm10 = nivelPm10(pms_estado.pm10);
-    // El veredicto general de particulas lo marca la media de 24 h, que es lo
-    // que de verdad mide la OMS. El instantaneo se sigue pintando en la
-    // tarjeta y en el OLED, pero no pone toda la casa en rojo por una sarten.
-    registrarPeor(medias24.hayPm25 ? alertas.pm25_24h : alertas.pm25, "PM2.5");
-    registrarPeor(medias24.hayPm10 ? alertas.pm10_24h : alertas.pm10, "PM10");
+    // El resumen superior describe el aire de ahora, igual que las tarjetas.
+    // La exposicion de 24 h se conserva aparte en Estadisticas: mezclarla aqui
+    // dejaba "MALO: PM2.5" pegado aunque la lectura actual ya fuese correcta.
+    registrarPeor(alertas.pm25, "PM2.5");
+    registrarPeor(alertas.pm10, "PM10");
   }
 
   if (saludScd() == SALUD_OK) {

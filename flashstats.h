@@ -6,5 +6,5 @@
 // no un historico. Persistirlo en flash para contar escrituras en flash
 // seria el mismo problema que se quiere vigilar.
 
-void contarEscrituraFlash();
+void contarEscrituraFlash(uint32_t cuantas = 1);
 uint32_t escriturasFlash();

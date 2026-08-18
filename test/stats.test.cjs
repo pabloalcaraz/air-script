@@ -3,6 +3,7 @@
 // Valida el ALGORITMO, no el binario compilado.
 
 const CO2_EXTERIOR_PPM = 430, ACH_MIN_MUESTRAS = 10, ACH_TOLERANCIA = 12;
+const HIST_HUECO_MAX_S = 90;
 const ACH_SALTO_MIN = 200, ACH_BAJADA_MIN = 60, ACH_R2_MIN = 0.80, ACH_MAX = 20.0;
 const NULO = null;
 
@@ -22,28 +23,38 @@ function percentilInc(vals, p) {
 }
 
 // ---------- ACH, port literal de estadisticasAch() ----------
-function ach(co2) {           // array con null donde el sensor estaba caido
+function ach(co2, marcas = co2.map((_, i) => i * 60)) {
+  // co2 lleva null donde el sensor estaba caido; marcas son segundos reales.
   const total = co2.length;
   if (total < ACH_MIN_MUESTRAS) return NaN;
 
-  let iniRun = -1, prevIdx = -1, mejorIni = -1, mejorFin = -1, prev = 0;
+  const tramoSuficiente = (ini, fin) => ini >= 0 &&
+    fin - ini + 1 >= ACH_MIN_MUESTRAS &&
+    marcas[fin] - marcas[ini] >= (ACH_MIN_MUESTRAS - 1) * 60;
+  let iniRun = -1, prevIdx = -1, mejorIni = -1, mejorFin = -1, prev = 0, prevTs = 0;
   for (let i = 0; i < total; i++) {
     const v = co2[i];
     if (v === NULO) {
-      if (iniRun >= 0 && prevIdx - iniRun + 1 >= ACH_MIN_MUESTRAS) {
+      if (tramoSuficiente(iniRun, prevIdx)) {
         mejorIni = iniRun; mejorFin = prevIdx;
       }
       iniRun = -1; prevIdx = -1;
       continue;
     }
-    if (prevIdx < 0) iniRun = i;
-    else if (v > prev + ACH_TOLERANCIA) {
-      if (prevIdx - iniRun + 1 >= ACH_MIN_MUESTRAS) { mejorIni = iniRun; mejorFin = prevIdx; }
+    const huecoTiempo = prevIdx >= 0 && marcas[i] - prevTs > HIST_HUECO_MAX_S;
+    if (prevIdx < 0 || huecoTiempo) {
+      if (huecoTiempo && tramoSuficiente(iniRun, prevIdx)) {
+        mejorIni = iniRun; mejorFin = prevIdx;
+      }
       iniRun = i;
     }
-    prev = v; prevIdx = i;
+    else if (v > prev + ACH_TOLERANCIA) {
+      if (tramoSuficiente(iniRun, prevIdx)) { mejorIni = iniRun; mejorFin = prevIdx; }
+      iniRun = i;
+    }
+    prev = v; prevIdx = i; prevTs = marcas[i];
   }
-  if (iniRun >= 0 && prevIdx - iniRun + 1 >= ACH_MIN_MUESTRAS) {
+  if (tramoSuficiente(iniRun, prevIdx)) {
     mejorIni = iniRun; mejorFin = prevIdx;
   }
   if (mejorIni < 0) return NaN;
@@ -56,7 +67,7 @@ function ach(co2) {           // array con null donde el sensor estaba caido
     if (exceso < 1.0) break;
     if (!n) c0 = v;
     cFin = v;
-    const x = (i - mejorIni) / 60.0, y = Math.log(exceso);
+    const x = (marcas[i] - marcas[mejorIni]) / 3600.0, y = Math.log(exceso);
     sx += x; sy += y; sxx += x * x; sxy += x * y; syy += y * y; n++;
   }
   if (n < ACH_MIN_MUESTRAS) return NaN;
@@ -144,6 +155,14 @@ const dos = decaimiento(0.4, 1700, 80, 0)
   .concat(Array.from({ length: 30 }, (_, i) => 700 + i * 20))   // sube: corta
   .concat(decaimiento(2.0, 1300, 25, 0));
 cerca("con dos ventilaciones coge la mas reciente (2.00)", ach(dos), 2.00, 0.15);
+
+// Una pausa larga del loop no puede comprimirse a un minuto imaginario ni
+// coser dos tramos separados como si fueran una ventilacion continua.
+const conPausa = decaimiento(0.8, 1600, 15, 0)
+  .concat(decaimiento(2.0, 1300, 25, 0));
+const marcasPausa = conPausa.map((_, i) => i < 15 ? i * 60 : i * 60 + 600);
+cerca("un hueco temporal usa solo el tramo posterior (2.00)",
+  ach(conPausa, marcasPausa), 2.00, 0.15);
 
 console.log(fallos ? "\n" + fallos + " FALLO(S)" : "\nTodo correcto");
 process.exit(fallos ? 1 : 0);

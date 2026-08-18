@@ -11,6 +11,8 @@ Influx Line Protocol.
 
 > Este es un proyecto doméstico y experimental. No es un instrumento médico,
 > industrial ni un equipo de medida certificado.
+>
+> <img width="1902" height="907" alt="image" src="https://github.com/user-attachments/assets/9df3aa21-7362-4dde-bfcb-8daecbc59db0" />
 
 ## Funciones
 
@@ -69,7 +71,7 @@ altitud del SCD41.
 Con Arduino CLI 0.35 o posterior:
 
 ```bash
-git clone https://github.com/<usuario>/qair-script.git
+git clone https://github.com/pabloalcaraz/qair-script.git
 cd qair-script
 arduino-cli compile --profile esp32 .
 arduino-cli upload --profile esp32 -p <PUERTO> .
@@ -142,6 +144,9 @@ Air Script está pensado para una red doméstica de confianza:
   (AQICN/Open-Meteo) y DigiCert Global Root G2 (Grafana Cloud). Esas raíces
   caducan en 2035 y 2038 respectivamente y deberán actualizarse si los
   proveedores cambian de autoridad certificadora.
+- Las peticiones HTTPS se serializan para limitar los picos de memoria del
+  ESP32. El backup se procesa en una tarea separada, con cola y espera
+  exponencial, de modo que un servidor lento no detiene sensores, OLED ni API.
 - El backup solo acepta URLs `https://` bajo `*.grafana.net`; cambiar su URL o
   usuario obliga a introducir de nuevo el token para que una credencial antigua
   no se envíe accidentalmente a otro destino.
@@ -149,13 +154,15 @@ Air Script está pensado para una red doméstica de confianza:
   ESP32 consulta AQICN/Open-Meteo con las coordenadas seleccionadas.
 
 No expongas el puerto 80 del dispositivo a Internet ni uses tokens de escritura
-con más permisos de los imprescindibles.
+con más permisos de los imprescindibles. Consulta el modelo de amenaza y el
+canal de notificación en [SECURITY.md](SECURITY.md).
 
 ## Documentación
 
 - [Montaje, alimentación e instalación](docs/HARDWARE.md)
 - [Uso, métricas, calibración y diagnóstico](docs/USAGE.md)
 - [API HTTP](docs/API.md)
+- [Seguridad y notificación de vulnerabilidades](SECURITY.md)
 - [Desarrollo y contribuciones](CONTRIBUTING.md)
 
 ## Licencia

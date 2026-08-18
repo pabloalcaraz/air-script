@@ -51,11 +51,11 @@ void historialGuardar() {
 
 uint16_t historialCount() { return total; }
 
-void historialAjustarTs(int32_t desfase) {
+void historialAjustarTs(int64_t desfase) {
   uint16_t inicio = (total == HIST_SIZE) ? cabeza : 0;
   for (uint16_t i = 0; i < total; i++) {
     Muestra &m = buf[(inicio + i) % HIST_SIZE];
-    if (m.ts < TS_EPOCH_MIN) m.ts = (uint32_t)((int32_t)m.ts + desfase);
+    if (m.ts < TS_EPOCH_MIN) m.ts = (uint32_t)((int64_t)m.ts + desfase);
   }
 }
 

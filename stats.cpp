@@ -34,18 +34,20 @@ static Nivel nivelDe(uint8_t campo, float v) {
   }
 }
 
-// Pendiente de los ultimos TEND_MUESTRAS minutos por minimos cuadrados, en
-// unidades por minuto. Se usa el indice como eje X porque el historial guarda
-// exactamente una muestra por minuto: el ts real no cambiaria el resultado y
-// obligaria a manejar el caso de "aun no hay hora NTP".
+// Pendiente de las ultimas TEND_MUESTRAS por minimos cuadrados, en unidades
+// por minuto. Se usa el timestamp monotono/epoch real: una operacion lenta no
+// convierte por error 70 segundos en un minuto perfecto.
 static float tendencia(uint8_t campo, uint16_t total) {
   uint16_t desde = total > TEND_MUESTRAS ? total - TEND_MUESTRAS : 0;
   double sx = 0, sy = 0, sxx = 0, sxy = 0;
   uint16_t n = 0;
+  uint32_t baseTs = 0;
   for (uint16_t i = desde; i < total; i++) {
     float v;
-    if (!muestraValor(historialGet(i), campo, v)) continue;
-    double x = (double)i;
+    const Muestra *m = historialGet(i);
+    if (!muestraValor(m, campo, v)) continue;
+    if (!n) baseTs = m->ts;
+    double x = (double)(uint32_t)(m->ts - baseTs) / 60.0;
     sx += x; sy += v; sxx += x * x; sxy += x * v; n++;
   }
   if (n < TEND_MIN_PUNTOS) return NAN;
@@ -133,10 +135,15 @@ void estadisticasRefrescarMedias() {
 
 uint16_t estadisticasSinVentilar() {
   uint16_t total = historialCount();
+  const Muestra *ultima = total ? historialGet(total - 1) : nullptr;
   for (uint16_t i = total; i > 0; i--) {
     float v;
-    if (!muestraValor(historialGet(i - 1), C_CO2, v)) continue;
-    if (v < CO2_VENTILADO) return total - i;  // minutos desde esa muestra
+    const Muestra *m = historialGet(i - 1);
+    if (!muestraValor(m, C_CO2, v)) continue;
+    if (v < CO2_VENTILADO) {
+      uint32_t minutos = ultima ? (uint32_t)(ultima->ts - m->ts) / 60UL : 0;
+      return minutos > UINT16_MAX ? UINT16_MAX : (uint16_t)minutos;
+    }
   }
   return SIN_VENTILAR_NUNCA;
 }
@@ -153,29 +160,43 @@ float estadisticasAch() {
   // ventilacion de hace diez minutos, no la de hace veinte horas.
   int32_t iniRun = -1, prevIdx = -1, mejorIni = -1, mejorFin = -1;
   float prev = 0;
+  uint32_t prevTs = 0;
+  auto tramoSuficiente = [](int32_t ini, int32_t fin) {
+    if (ini < 0 || fin - ini + 1 < ACH_MIN_MUESTRAS) return false;
+    const Muestra *a = historialGet((uint16_t)ini);
+    const Muestra *b = historialGet((uint16_t)fin);
+    return a && b && (uint32_t)(b->ts - a->ts) >=
+                     (uint32_t)(ACH_MIN_MUESTRAS - 1) * 60UL;
+  };
   for (uint16_t i = 0; i < total; i++) {
     float v;
-    if (!muestraValor(historialGet(i), C_CO2, v)) {
+    const Muestra *m = historialGet(i);
+    if (!muestraValor(m, C_CO2, v)) {
       // Un hueco corta el tramo: no se puede afirmar que el CO2 siguiera
       // bajando mientras el sensor estaba caido.
-      if (iniRun >= 0 && prevIdx - iniRun + 1 >= ACH_MIN_MUESTRAS) {
+      if (tramoSuficiente(iniRun, prevIdx)) {
         mejorIni = iniRun; mejorFin = prevIdx;
       }
       iniRun = -1; prevIdx = -1;
       continue;
     }
-    if (prevIdx < 0) {
+    bool huecoTiempo = prevIdx >= 0 &&
+                       (uint32_t)(m->ts - prevTs) > HIST_HUECO_MAX_S;
+    if (prevIdx < 0 || huecoTiempo) {
+      if (huecoTiempo && tramoSuficiente(iniRun, prevIdx)) {
+        mejorIni = iniRun; mejorFin = prevIdx;
+      }
       iniRun = i;
     } else if (v > prev + ACH_TOLERANCIA) {
       // Repunte por encima del ruido: el tramo termina aqui.
-      if (prevIdx - iniRun + 1 >= ACH_MIN_MUESTRAS) {
+      if (tramoSuficiente(iniRun, prevIdx)) {
         mejorIni = iniRun; mejorFin = prevIdx;
       }
       iniRun = i;
     }
-    prev = v; prevIdx = i;
+    prev = v; prevIdx = i; prevTs = m->ts;
   }
-  if (iniRun >= 0 && prevIdx - iniRun + 1 >= ACH_MIN_MUESTRAS) {
+  if (tramoSuficiente(iniRun, prevIdx)) {
     mejorIni = iniRun; mejorFin = prevIdx;
   }
   if (mejorIni < 0) return NAN;
@@ -183,9 +204,11 @@ float estadisticasAch() {
   double sx = 0, sy = 0, sxx = 0, sxy = 0, syy = 0;
   uint16_t n = 0;
   float c0 = 0, cFin = 0;
+  const Muestra *mIni = historialGet((uint16_t)mejorIni);
   for (int32_t i = mejorIni; i <= mejorFin; i++) {
     float v;
-    if (!muestraValor(historialGet((uint16_t)i), C_CO2, v)) continue;
+    const Muestra *m = historialGet((uint16_t)i);
+    if (!muestraValor(m, C_CO2, v)) continue;
     float exceso = v - CO2_EXTERIOR_PPM;
     // Por debajo del fondo atmosferico el logaritmo no existe. Pasa con el
     // ruido del sensor cuando el aire ya esta renovado: a partir de ahi el
@@ -193,7 +216,7 @@ float estadisticasAch() {
     if (exceso < 1.0f) break;
     if (!n) c0 = v;
     cFin = v;
-    double x = (double)(i - mejorIni) / 60.0;  // horas
+    double x = (double)(uint32_t)(m->ts - mIni->ts) / 3600.0;  // horas
     double y = log(exceso);
     sx += x; sy += y; sxx += x * x; sxy += x * y; syy += y * y; n++;
   }

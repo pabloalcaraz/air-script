@@ -20,7 +20,7 @@
 // desbordamiento de millis() a los ~49 dias no rompa la logica.
 static uint32_t tScd = 0, tPantalla = 0, tSerie = 0, tRed = 0;
 static uint32_t tMuestra = 0, tMonitor = 0, tAlertas = 0;
-static uint32_t tCloud = 0, tCloudDrenaje = 0;
+static uint32_t tCloud = 0;
 
 // Una linea de estado por segundo: lecturas, marcas de alerta y salud.
 static void serieEstado() {
@@ -70,8 +70,10 @@ void setup() {
   i2cEscanear();   // diagnostico del bus antes de tocar nada
   pantallaInit();  // no bloquea si falla
   monitorInit();   // deja constancia en el log de con que hardware arrancamos
-  sensoresInit();  // antes que la red: el PMS calienta mientras conectamos
   redInit();       // si no hay WiFi, seguimos midiendo igual
+  // WiFiManager puede retener setup() hasta 180 s. Arrancar despues evita
+  // dejar el laser del PMS encendido y su UART sin drenar durante el portal.
+  sensoresInit();
   // Despues de redInit(): la tarea de sondeo comprueba el WiFi por su cuenta,
   // pero sin localizacion guardada ni siquiera se crea.
   exteriorInit();
@@ -137,11 +139,6 @@ void loop() {
   if (ahora - tCloud >= INT_CLOUD) {
     tCloud = ahora;
     cloudTick();
-  }
-
-  if (ahora - tCloudDrenaje >= INT_CLOUD_DRENAJE) {
-    tCloudDrenaje = ahora;
-    cloudDrenar();
   }
 
   servidorAtender();  // cada vuelta: no puede haber esperas antes de esto

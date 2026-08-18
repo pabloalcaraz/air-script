@@ -56,6 +56,13 @@ function assert(cond, msg) {
   else console.log("OK:", msg);
 }
 
+function reinsertarFrente(cola, valor) {
+  if (cola.cuenta === CLOUD_BUFFER) cola.cuenta--;
+  cola.cabeza = (cola.cabeza + CLOUD_BUFFER - 1) % CLOUD_BUFFER;
+  cola.buf[cola.cabeza] = valor;
+  cola.cuenta++;
+}
+
 console.log("\n--- Seguridad del destino cloud ---");
 assert(destinoSeguro("https://influx-prod-01.grafana.net/api/v1/push/influx/write"),
   "acepta un endpoint HTTPS oficial de Grafana");
@@ -75,6 +82,17 @@ assert(!/setInsecure\s*\(\s*\)/.test(cloudSrc),
   "cloud no desactiva la validacion TLS");
 assert(/cambiaDestino\s*&&\s*!tocaToken/.test(cloudSrc),
   "cambiar URL o usuario exige un token nuevo");
+assert(/xTaskCreatePinnedToCore[\s\S]*tareaCloud/.test(cloudSrc),
+  "el transporte cloud vive en una tarea FreeRTOS");
+const bloqueTick = /void cloudTick\(\)\s*\{([\s\S]*?)\n\}/.exec(cloudSrc)?.[1] || "";
+assert(!/enviarLinea|HTTPClient|\.POST\(/.test(bloqueTick),
+  "cloudTick solo encola y no hace red bloqueante");
+assert(/redTlsTomar\s*\(\s*RED_TLS_ESPERA_MS\s*\)/.test(cloudSrc),
+  "cloud serializa su handshake TLS con el resto de tareas");
+assert(/CLOUD_REINTENTO_MIN_MS[\s\S]*CLOUD_REINTENTO_MAX_MS/.test(cloudSrc),
+  "los fallos aplican backoff acotado");
+assert(!/void cloudDrenar\s*\(/.test(cloudSrc),
+  "ya no existe un drenaje HTTP síncrono desde el loop");
 
 // Caso 1: FIFO simple sin llenar
 let c = crearCola();
@@ -98,6 +116,15 @@ for (let i = 0; i < CLOUD_BUFFER - 1; i++) ultimo = desencolar(c);
 assert(ultimo === "nueva", "la nueva se conservo, quedo la ultima");
 assert(c.cuenta === 0, "cola vacia tras sacar todo");
 
+// Caso 3b: si falla el elemento más antiguo, vuelve delante y no al final.
+c = crearCola();
+encolar(c, "antigua"); encolar(c, "segunda");
+const fallida = desencolar(c);
+encolar(c, "nueva-durante-post");
+reinsertarFrente(c, fallida);
+assert(desencolar(c) === "antigua", "un POST fallido conserva el orden FIFO");
+assert(desencolar(c) === "segunda", "la segunda muestra no adelanta a la fallida");
+
 // Caso 4: encolar-desencolar alternado no corrompe el orden (wrap-around)
 c = crearCola();
 for (let ronda = 0; ronda < 5; ronda++) {
@@ -109,7 +136,7 @@ for (let ronda = 0; ronda < 5; ronda++) {
 
 // Port de cloudLinea() de cloud.cpp: formateador a Influx Line Protocol.
 // Campos con centinela NULO_* se omiten; si no queda ninguno, devuelve null
-// (equivalente al "return 0" en C, que en cloudTick()/cloudDrenar() se lee
+// (equivalente al "return 0" en C, que cloudTick()/tareaCloud() interpretan
 // como "nada que mandar").
 
 const NULO_U16 = 0xFFFF;
