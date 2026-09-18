@@ -48,6 +48,10 @@ Conexiones principales:
 | 3V3 | OLED + SCD41 | 3,3 V |
 | GND | Todos | Masa común |
 
+<img width="4032" height="3024" alt="IMG_5878" src="https://github.com/user-attachments/assets/8bbaae14-0373-4a29-b018-90a6e4ee76d8" />
+
+<img width="4032" height="3024" alt="IMG_5880" src="https://github.com/user-attachments/assets/78283353-9a0d-4dd9-b32e-e1b3f1bb4729" />
+
 Consulta [docs/HARDWARE.md](docs/HARDWARE.md) antes de alimentar el montaje.
 Incluye el cableado completo, advertencias eléctricas y la configuración de
 altitud del SCD41.
