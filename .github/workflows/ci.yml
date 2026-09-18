@@ -37,7 +37,4 @@ jobs:
           version: "1.5.1"
 
       - name: Compile firmware
-        run: |
-          mkdir -p "$RUNNER_TEMP/air-script"
-          cp -a "$GITHUB_WORKSPACE/." "$RUNNER_TEMP/air-script/"
-          arduino-cli compile --profile esp32 --warnings all "$RUNNER_TEMP/air-script"
+        run: arduino-cli compile --profile esp32 --warnings all .

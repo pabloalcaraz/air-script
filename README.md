@@ -72,17 +72,21 @@ altitud del SCD41.
 ### arduino-cli
 
 `sketch.yaml` fija la placa, la partición y las versiones de las dependencias.
-Con Arduino CLI 0.35 o posterior:
+Probado con Arduino CLI 1.5.1:
 
 ```bash
-git clone https://github.com/pabloalcaraz/qair-script.git
-cd qair-script
+git clone https://github.com/pabloalcaraz/air-script.git
+cd air-script
 arduino-cli compile --profile esp32 .
 arduino-cli upload --profile esp32 -p <PUERTO> .
 ```
 
-El esquema `Huge APP` es obligatorio: el servidor web embebido no cabe en la
-partición de aplicación predeterminada.
+La carpeta debe llamarse `air-script`: Arduino exige que el directorio del
+sketch coincida con el nombre de `air-script.ino`. Si la clonas con otro
+nombre, la compilación falla con `main file missing from sketch`.
+
+El esquema `Huge APP` es obligatorio: con la partición predeterminada el
+binario ocuparía el 98% y no quedaría margen para crecer.
 
 ## Primer arranque
 
