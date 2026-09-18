@@ -12,7 +12,7 @@ Influx Line Protocol.
 > Este es un proyecto doméstico y experimental. No es un instrumento médico,
 > industrial ni un equipo de medida certificado.
 >
-> <img width="1902" height="907" alt="image" src="https://github.com/user-attachments/assets/9df3aa21-7362-4dde-bfcb-8daecbc59db0" />
+> ![Dashboard web de Air Script: lecturas actuales de PM1.0/PM2.5/PM10, CO2, temperatura y humedad, valores calculados y comparativa con el aire de fuera](docs/img/dashboard.png)
 
 ## Funciones
 
@@ -48,9 +48,9 @@ Conexiones principales:
 | 3V3 | OLED + SCD41 | 3,3 V |
 | GND | Todos | Masa común |
 
-<img width="4032" height="3024" alt="IMG_5878" src="https://github.com/user-attachments/assets/8bbaae14-0373-4a29-b018-90a6e4ee76d8" />
+![Pantalla OLED mostrando las lecturas interiores: PM1.0, PM2.5, PM10, CO2, temperatura y humedad](docs/img/montaje-1.jpg)
 
-<img width="4032" height="3024" alt="IMG_5880" src="https://github.com/user-attachments/assets/78283353-9a0d-4dd9-b32e-e1b3f1bb4729" />
+![Montaje dentro de la caja: ESP32, sensor PMS5003, OLED y SCD41 cableados sobre protoboard](docs/img/montaje-2.jpg)
 
 Consulta [docs/HARDWARE.md](docs/HARDWARE.md) antes de alimentar el montaje.
 Incluye el cableado completo, advertencias eléctricas y la configuración de
