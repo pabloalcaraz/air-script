@@ -1,0 +1,33 @@
+name: Informe de fallo
+description: Algo no funciona como se describe en README/docs
+labels: [bug]
+body:
+  - type: textarea
+    id: descripcion
+    attributes:
+      label: Qué pasa
+      description: Describe el fallo y qué esperabas que pasara en su lugar.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduccion
+    attributes:
+      label: Cómo reproducirlo
+      description: Pasos, endpoint llamado, acción en el dashboard, etc.
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware y versión
+      description: Placa ESP32, sensores conectados, commit o versión del firmware.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log serie o respuesta de la API
+      description: Pega la salida relevante. No incluyas tokens, credenciales ni ubicaciones.
+      render: text
+    validations:
+      required: false

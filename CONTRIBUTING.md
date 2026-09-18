@@ -4,6 +4,19 @@ Gracias por mejorar Air Script. Este documento resume la arquitectura, las
 convenciones y las comprobaciones necesarias para cambiar el firmware sin
 desincronizar el dashboard ni sus pruebas.
 
+## Cómo contribuir
+
+1. Abre una incidencia antes de un PR grande, para acordar el enfoque.
+2. Para fallos de seguridad no abras una incidencia pública: usa **Security →
+   Report a vulnerability** (ver [SECURITY.md](SECURITY.md)).
+3. Un PR por cambio lógico, con la comprobación de la sección
+   [Comprobación antes de entregar un cambio](#comprobación-antes-de-entregar-un-cambio)
+   completa.
+4. Si el cambio toca sensores, red, NVS o temporizadores, dilo explícitamente
+   en el PR y valida en hardware real: no forma parte de la CI.
+5. No incluyas credenciales, tokens ni ubicaciones propias en el código, en
+   los mensajes de commit ni en capturas.
+
 ## Entorno
 
 - Arduino CLI 1.x (probado con 1.5.1), o Arduino IDE compatible.

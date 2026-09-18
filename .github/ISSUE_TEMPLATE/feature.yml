@@ -1,0 +1,18 @@
+name: Propuesta de mejora
+description: Una función o cambio que no existe todavía
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problema
+    attributes:
+      label: Qué problema resuelve
+      description: Qué no puedes hacer hoy con Air Script que esta mejora permitiría.
+    validations:
+      required: true
+  - type: textarea
+    id: propuesta
+    attributes:
+      label: Cómo lo plantearías
+      description: Boceto de la solución, aunque sea aproximado.
+    validations:
+      required: false

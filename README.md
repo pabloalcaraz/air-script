@@ -1,5 +1,7 @@
 # Air Script — estación de calidad del aire con ESP32
 
+[![CI](https://github.com/pabloalcaraz/air-script/actions/workflows/ci.yml/badge.svg)](https://github.com/pabloalcaraz/air-script/actions/workflows/ci.yml)
+
 Air Script es un firmware para construir una estación doméstica de calidad del
 aire con un ESP32. Mide partículas, CO₂, temperatura y humedad; muestra el
 estado en una pantalla OLED y sirve un dashboard web completo desde la memoria
