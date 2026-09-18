@@ -7,10 +7,9 @@ mantiene por ahora ramas antiguas ni versiones con soporte prolongado.
 
 ## Notificar una vulnerabilidad
 
-Cuando el repositorio sea público, usa **Security → Report a vulnerability**
-en GitHub para enviar el informe de forma privada. No abras una incidencia
-pública si el problema puede exponer credenciales, ubicaciones o permitir
-modificar un dispositivo.
+Usa **Security → Report a vulnerability** en GitHub para enviar el informe de
+forma privada. No abras una incidencia pública si el problema puede exponer
+credenciales, ubicaciones o permitir modificar un dispositivo.
 
 Incluye, si es posible, la versión o commit afectado, el escenario necesario
 para reproducirlo, su impacto y una prueba de concepto sin datos personales.
