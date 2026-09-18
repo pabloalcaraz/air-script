@@ -111,7 +111,7 @@ static bool postPermitido() {
 // ------------------------------------------------------------------ /api/now
 
 static void rutaNow() {
-  // 1050 y no 900: el bloque "umbrales" (los 4 #define de config.h) añade
+  // 1050 y no 900: el bloque "umbrales" (los 4 #define de config.h) anade
   // ~70 B en el peor caso; se sube el margen para no rozar el truncado.
   char buf[1050];
   uint32_t scdHace = scd_estado.ultimaLecturaMs
@@ -119,7 +119,7 @@ static void rutaNow() {
 
   // Las medias de 24 h viajan aqui y no solo en /api/stats porque el veredicto
   // de la cabecera depende de ellas: si la web tuviera que pedir dos endpoints
-  // para explicar un titular, acabaria enseñando el titular sin explicacion.
+  // para explicar un titular, acabaria ensenando el titular sin explicacion.
   char m25[12] = "null", m10[12] = "null", n25[8] = "null", n10[8] = "null";
   if (medias24.hayPm25) {
     snprintf(m25, sizeof m25, "%.1f", medias24.pm25);

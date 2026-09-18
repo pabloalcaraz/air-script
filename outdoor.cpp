@@ -87,7 +87,7 @@ static bool statusOk(const char *json) {
   return strstr(json, "\"status\":\"ok\"") != nullptr;
 }
 
-// Aproximacion plana: valida con error <0.5% a la escala de España (<1000 km
+// Aproximacion plana: valida con error <0.5% a la escala de Espana (<1000 km
 // entre dos puntos cualesquiera). Evita traer una libreria de trigonometria
 // esferica solo para saber si una estacion esta "cerca" o "lejos".
 static float distanciaKm(float lat1, float lon1, float lat2, float lon2) {
@@ -345,7 +345,7 @@ static bool sondearOpenMeteo(float lat, float lon, uint32_t revision) {
     exterior.temp = hayMeteo ? temp : NAN;
     exterior.hum  = hayMeteo ? hum  : NAN;
     exterior.fuente = FUENTE_MODELO;
-    // Se limpian por si el sondeo anterior fue AQICN: enseñar el nombre de
+    // Se limpian por si el sondeo anterior fue AQICN: ensenar el nombre de
     // una estacion junto a datos que en realidad vienen del modelo mentiria
     // sobre el origen del dato.
     exterior.estacion[0] = '\0';
@@ -463,7 +463,7 @@ void exteriorInit() {
   }
   Serial.printf("[EXT] Localizacion: %s (%.4f, %.4f)%s\n",
                 exterior.lugar, exterior.lat, exterior.lon,
-                aqicnToken[0] ? " · AQICN configurado" : "");
+                aqicnToken[0] ? " - AQICN configurado" : "");
   arrancarTareaExterior();
 }
 
@@ -499,7 +499,7 @@ bool exteriorFijarLugar(float lat, float lon, const char *nombre) {
     strncpy(exterior.lugar, nombre, sizeof exterior.lugar - 1);
     exterior.lugar[sizeof exterior.lugar - 1] = '\0';
     exterior.configurado = true;
-    // Los valores del sitio anterior se tiran: seguir enseñandolos con el
+    // Los valores del sitio anterior se tiran: seguir ensenandolos con el
     // nombre nuevo seria atribuir a esta ciudad el aire de otra.
     exterior.valido = false;
     exterior.hayMeteo = false;

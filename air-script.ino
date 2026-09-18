@@ -1,4 +1,4 @@
-// Air Script — estacion de calidad del aire sobre ESP32.
+// Air Script - estacion de calidad del aire sobre ESP32.
 // PMS5003 (particulas) + SCD41 (CO2/temp/humedad) + OLED SSD1306.
 // Cableado y montaje en README.md. Constantes en config.h.
 

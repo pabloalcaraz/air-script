@@ -108,7 +108,7 @@
 // subida de 1 ppm partiria la bajada en trozos demasiado cortos para servir.
 #define ACH_TOLERANCIA 12
 // Salto minimo sobre el fondo exterior al empezar la bajada. Ir de 500 a 480
-// no dice nada de la ventilacion: el margen de error se come la señal.
+// no dice nada de la ventilacion: el margen de error se come la senal.
 #define ACH_SALTO_MIN 200
 // Bajada real minima a lo largo del tramo. Un tramo plano cumple la condicion
 // de "no sube", pero no es una ventilacion.
@@ -155,7 +155,7 @@
 #define AQICN_ESTACION_LEN 64
 // El geo: de AQICN devuelve la estacion mas cercana DE SU RED con dato fresco,
 // no la fisicamente mas cercana: donde la cobertura es pobre puede caer a una
-// a cientos de km. Enseñar el aire de una estacion a 250 km como si fuera el de
+// a cientos de km. Ensenar el aire de una estacion a 250 km como si fuera el de
 // tu calle es mentir. Por encima de este radio se descarta AQICN y se cae al
 // modelo Open-Meteo (rejilla 11 km en TUS coordenadas), mas honesto que una
 // estacion real lejana.
@@ -211,7 +211,7 @@
 // ---- Backup en la nube (Fase 2) ----
 // Mismo ritmo que historialGuardar(): un intento de envio por minuto.
 #define INT_CLOUD          60000UL
-// Drenaje de la cola cuando hay red: 1/s para no ráfagar el POST ni la
+// Drenaje de la cola cuando hay red: 1/s para no saturar el POST ni la
 // cuota gratuita del servicio al reconectar tras un corte largo.
 #define INT_CLOUD_DRENAJE   1000UL
 // ~2 h de margen a una muestra por minuto. 120 x 16 B = 1920 B de RAM,
