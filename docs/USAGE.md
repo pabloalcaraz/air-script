@@ -48,6 +48,8 @@ malo.
 | Temperatura | fuera de 18-27 °C | fuera de 15-30 °C |
 | Humedad | fuera de 30-60 % | fuera de 20-70 % |
 
+Los límites son inclusivos: un valor igual al umbral ya cuenta como ese nivel.
+
 PM1.0 no tiene alerta. La alerta de temperatura está desactivada por defecto
 con `ALERTA_TEMP=0`, aunque la magnitud se sigue midiendo y guardando.
 
@@ -139,8 +141,9 @@ de emitir un veredicto.
 
 Las coordenadas elegidas se envían a AQICN/Open-Meteo y las búsquedas de texto
 a Nominatim. El firmware valida las consultas HTTPS de ambos proveedores con
-ISRG Root X1. Esta raíz pública caduca en junio de 2035; si el proveedor cambia
-de cadena antes, habrá que actualizar `outdoor_ca.h`. No uses un token AQICN
+ISRG Root X1. Los certificados actuales llegan a esa raíz a través del
+cross-sign de ISRG Root YR, que vence el 2032-09-02; a partir de ahí, o si el
+proveedor cambia de cadena antes, habrá que actualizar `outdoor_ca.h`. No uses un token AQICN
 con más permisos de los necesarios.
 
 ## PMS5003: duty-cycle

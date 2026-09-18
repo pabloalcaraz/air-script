@@ -1,9 +1,10 @@
-# Perfil de compilacion reproducible (arduino-cli >= 0.35).
+# Perfil de compilacion reproducible (arduino-cli 1.x, probado con 1.5.1).
 #   arduino-cli compile --profile esp32
 #   arduino-cli upload  --profile esp32 -p <PUERTO>
 #
-# PartitionScheme=huge_app es OBLIGATORIO: con el esquema por defecto el
-# binario con WiFi ocupa el 84% de 1.3 MB y no cabe el servidor web.
+# PartitionScheme=huge_app es OBLIGATORIO: el binario ocupa ~1.29 MB y la
+# particion de aplicacion por defecto son 1.31 MB, o sea un 98% sin margen
+# para crecer ni para un solo campo JSON mas.
 # Aqui no usamos OTA ni SPIFFS (la web va embebida en PROGMEM), asi que
 # regalar esas particiones a la aplicacion no cuesta nada.
 profiles:

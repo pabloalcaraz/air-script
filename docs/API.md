@@ -92,6 +92,9 @@ máximo de 240 puntos. Un bloque sin ningún dato válido aparece como `null`.
 curl "http://air.local/api/stats?range=24h"
 ```
 
+La respuesta abre con `range`, el número de muestras `muestras` de la ventana
+solicitada y el bloque `series`.
+
 Cada entrada de `series` contiene:
 
 - `n`, `min`, `media`, `p95` y `max`;

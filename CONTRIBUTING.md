@@ -6,7 +6,7 @@ desincronizar el dashboard ni sus pruebas.
 
 ## Entorno
 
-- Arduino CLI 0.35 o posterior, o Arduino IDE compatible.
+- Arduino CLI 1.x (probado con 1.5.1), o Arduino IDE compatible.
 - Core `esp32:esp32` y bibliotecas declaradas en `sketch.yaml`.
 - Node.js para la suite de pruebas y la compresión del dashboard.
 - Hardware real para validar sensores, WiFi, NVS y consumo.

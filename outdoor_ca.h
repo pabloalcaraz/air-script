@@ -1,8 +1,11 @@
 #pragma once
 
-// ISRG Root X1, raiz de Let's Encrypt usada por AQICN y Open-Meteo a fecha de
-// 2026-08. Certificado publico oficial de https://letsencrypt.org/certificates/
-// y valido hasta 2035-06-04.
+// ISRG Root X1, raiz de Let's Encrypt usada por AQICN y Open-Meteo. Certificado
+// publico oficial de https://letsencrypt.org/certificates/, valido hasta
+// 2035-06-04. Ojo con la fecha que importa de verdad: desde 2026 la cadena
+// servida pasa por ISRG Root YR, cross-firmada por X1, y ESE cross-sign vence
+// el 2032-09-02. Cuando Let's Encrypt deje de servirlo, este pin dejara de
+// validar aunque X1 siga en fecha.
 static const char OUTDOOR_ROOT_CA[] PROGMEM = R"CERT(
 -----BEGIN CERTIFICATE-----
 MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw

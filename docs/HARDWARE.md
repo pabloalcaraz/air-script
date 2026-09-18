@@ -125,7 +125,7 @@ SPIFFS.
 Con Arduino IDE, abre `air-script.ino`, selecciona la placa, el esquema de
 particiones y el puerto.
 
-Con Arduino CLI 0.35 o posterior:
+Con Arduino CLI 1.x (probado con 1.5.1):
 
 ```bash
 arduino-cli compile --profile esp32 .

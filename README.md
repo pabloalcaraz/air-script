@@ -149,9 +149,12 @@ Air Script está pensado para una red doméstica de confianza:
 - La ubicación, las credenciales WiFi y los tokens se guardan en la NVS del
   dispositivo; no deben considerarse cifrados frente a acceso físico.
 - Las conexiones HTTPS validan el servidor con las raíces ISRG Root X1
-  (AQICN/Open-Meteo) y DigiCert Global Root G2 (Grafana Cloud). Esas raíces
-  caducan en 2035 y 2038 respectivamente y deberán actualizarse si los
-  proveedores cambian de autoridad certificadora.
+  (AQICN/Open-Meteo) y DigiCert Global Root G2 (Grafana Cloud). Let's Encrypt
+  ya emite bajo ISRG Root YR, que hoy llega cross-firmada por X1: ese
+  cross-sign vence el 2032-09-02 y marca el plazo real para AQICN y
+  Open-Meteo. DigiCert Global Root G2 es válida hasta 2038. Habrá que
+  actualizar `outdoor_ca.h` o `cloud_ca.h` antes de esas fechas, o si algún
+  proveedor cambia de autoridad certificadora.
 - Las peticiones HTTPS se serializan para limitar los picos de memoria del
   ESP32. El backup se procesa en una tarea separada, con cola y espera
   exponencial, de modo que un servidor lento no detiene sensores, OLED ni API.
